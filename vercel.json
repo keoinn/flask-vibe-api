@@ -1,16 +1,3 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/app.py",
-      "transforms": [
-        {
-          "type": "request.path",
-          "op": "set",
-          "args": "/$1"
-        }
-      ]
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }

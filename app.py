@@ -4,14 +4,89 @@
 """
 
 from datetime import datetime
+from urllib.parse import urlsplit
 
 from flask import Flask, jsonify, request
 
 from mock_data import ALLOWED_CATEGORIES, ITEMS, REVIEWS, parse_bool_query, parse_int_query
 
+_FORWARDED_PATH_HEADERS = (
+    "HTTP_X_FORWARDED_URI",
+    "HTTP_X_ORIGINAL_URI",
+    "HTTP_X_REWRITE_URL",
+    "HTTP_X_INVOKE_PATH",
+    "HTTP_X_MATCHED_PATH",
+    "HTTP_X_VERCEL_ORIGINAL_PATH",
+    "HTTP_X_FORWARDED_PATH",
+)
+
+
+def _collapse_slashes(path):
+    while "//" in path:
+        path = path.replace("//", "/")
+    return path or "/"
+
+
+def _path_only(raw):
+    """從標頭或絕對網址取出路徑，去掉 query。"""
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip()
+    if text == "" or "\n" in text or "\r" in text:
+        return None
+    if "://" in text:
+        text = urlsplit(text).path or "/"
+    else:
+        text = text.split("?", 1)[0]
+    text = _collapse_slashes(text)
+    while text == "/app.py" or text.startswith("/app.py/"):
+        text = _collapse_slashes(text[len("/app.py") :] or "/")
+    if not text.startswith("/"):
+        text = "/" + text
+    if text in ("/", "/app.py"):
+        return None
+    return text
+
+
+def normalize_vercel_path(path, environ=None):
+    """把 Vercel rewrite 改寫後的 PATH_INFO 還原成原本的公開路徑。"""
+    environ = environ or {}
+    if not isinstance(path, str) or path.strip() == "":
+        path = "/"
+    restored = _path_only(path)
+    if restored is None:
+        for key in _FORWARDED_PATH_HEADERS:
+            restored = _path_only(environ.get(key))
+            if restored is not None:
+                break
+    if restored is None:
+        for key, value in environ.items():
+            if not key.startswith("HTTP_"):
+                continue
+            candidate = _path_only(value)
+            if candidate is not None and candidate.startswith("/api/"):
+                restored = candidate
+                break
+    return restored or "/"
+
+
+class _NormalizeVercelPath:
+    """在 Flask 配對路由之前修正 PATH_INFO。"""
+
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        environ["PATH_INFO"] = normalize_vercel_path(environ.get("PATH_INFO", "/"), environ)
+        if environ.get("SCRIPT_NAME") in ("/app.py", "/app"):
+            environ["SCRIPT_NAME"] = ""
+        return self.wsgi_app(environ, start_response)
+
+
 app = Flask(__name__)
 app.json.ensure_ascii = False
 app.json.sort_keys = False
+app.wsgi_app = _NormalizeVercelPath(app.wsgi_app)
 
 tasks = [
     {
@@ -318,7 +393,9 @@ def create_item():
 @app.errorhandler(404)
 def handle_not_found(_error):
     """不存在的路徑一律回傳 JSON，避免 Flask 預設 HTML。"""
-    return make_response_payload("error", "找不到指定的路徑", status_code=404)
+    response, status_code = make_response_payload("error", "找不到指定的路徑", status_code=404)
+    response.headers["X-Path-Info"] = request.path
+    return response, status_code
 
 
 @app.errorhandler(500)
