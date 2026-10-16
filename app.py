@@ -7,7 +7,7 @@ from datetime import datetime
 
 from flask import Flask, jsonify, request
 
-from mock_data import ALLOWED_CATEGORIES, ITEMS, parse_bool_query, parse_int_query
+from mock_data import ALLOWED_CATEGORIES, ITEMS, REVIEWS, parse_bool_query, parse_int_query
 
 app = Flask(__name__)
 app.json.ensure_ascii = False
@@ -230,6 +230,16 @@ def get_item(item_id):
     if item is None:
         return make_response_payload("error", "找不到指定商品", status_code=404)
     return make_response_payload("success", "取得商品成功", item)
+
+
+@app.get("/api/items/<int:item_id>/reviews")
+def list_item_reviews(item_id):
+    """取得指定商品的評論。路徑必須先對到存在的商品。"""
+    if find_item(item_id) is None:
+        return make_response_payload("error", "找不到指定商品", status_code=404)
+    matched = [review for review in REVIEWS if review["item_id"] == item_id]
+    meta = {"total": len(matched), "item_id": item_id}
+    return make_response_payload("success", "取得商品評論成功", matched, meta=meta)
 
 
 @app.post("/api/items")
