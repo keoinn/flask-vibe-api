@@ -80,7 +80,7 @@ def create_app():
     # -------------------------------------------------------------
     def is_origin_allowed(origin):
         if not origin:
-            return False
+            return True
         # 放行 http://127.0.0.1 與 http://localhost 的任意連接埠（亦相容 https）
         if re.match(r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$", origin):
             return True
@@ -94,22 +94,30 @@ def create_app():
     @app.before_request
     def handle_cors_preflight():
         if request.method == "OPTIONS":
-            origin = request.headers.get("Origin")
+            origin = request.headers.get("Origin") or ""
             if is_origin_allowed(origin):
                 res = make_response("", 204)
-                res.headers["Access-Control-Allow-Origin"] = origin
+                allow_origin = origin if origin else "*"
+                res.headers["Access-Control-Allow-Origin"] = allow_origin
                 res.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, PUT, DELETE, OPTIONS"
-                res.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+                req_headers = request.headers.get("Access-Control-Request-Headers", "Content-Type, Authorization")
+                res.headers["Access-Control-Allow-Headers"] = req_headers
+                res.headers["Access-Control-Allow-Private-Network"] = "true"
                 res.headers["Access-Control-Max-Age"] = "86400"
+                res.headers["Vary"] = "Origin"
                 return res
 
     @app.after_request
     def apply_cors_headers(response):
-        origin = request.headers.get("Origin")
+        origin = request.headers.get("Origin") or ""
         if is_origin_allowed(origin):
-            response.headers["Access-Control-Allow-Origin"] = origin
+            allow_origin = origin if origin else "*"
+            response.headers["Access-Control-Allow-Origin"] = allow_origin
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, PUT, DELETE, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, *"
+            response.headers["Access-Control-Allow-Private-Network"] = "true"
+            response.headers["Vary"] = "Origin"
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         return response
 
     # -------------------------------------------------------------

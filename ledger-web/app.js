@@ -149,15 +149,29 @@
       throw new Error("目前連不上記帳服務");
     }
 
-    const url = `${state.apiBaseUrl}${endpoint}`;
+    const method = (options.method || "GET").toUpperCase();
+    const hasBody = options.body != null;
+
+    // 非變更請求 (GET) 加上時間戳快取消除，避免瀏覽器誤取無 CORS 標頭的過期快取
+    const sep = endpoint.includes("?") ? "&" : "?";
+    const cacheBustUrl = hasBody || method !== "GET"
+      ? `${state.apiBaseUrl}${endpoint}`
+      : `${state.apiBaseUrl}${endpoint}${sep}_t=${Date.now()}`;
+
+    // 只有具有 Body 的請求 (POST, PATCH 等) 才附加 Content-Type，讓單純 GET 維持 CORS Simple Request
     const headers = {
-      "Content-Type": "application/json",
+      ...(hasBody ? { "Content-Type": "application/json" } : {}),
       ...(options.headers || {}),
     };
 
     let response;
     try {
-      response = await fetch(url, { ...options, headers });
+      response = await fetch(cacheBustUrl, {
+        ...options,
+        headers,
+        mode: "cors",
+        cache: "no-store",
+      });
     } catch (netErr) {
       // 網路斷線、CORS 阻擋或伺服器未啟動
       throw new Error("目前連不上記帳服務");
@@ -198,12 +212,23 @@
   }
 
   async function testHealthCheck(baseUrl) {
-    const cleanUrl = baseUrl.replace(/\/+$/, "");
-    const healthUrl = `${cleanUrl}/api/health`;
+    let cleanUrl = baseUrl.replace(/\/+$/, "");
+
+    // macOS 控制中心 (ControlCenter) 的隔空播放接收器常佔用 ::1:5000 (IPv6)，若填寫 localhost 自動轉為 127.0.0.1 避開衝突
+    if (cleanUrl.includes("://localhost:5000")) {
+      cleanUrl = cleanUrl.replace("://localhost:5000", "://127.0.0.1:5000");
+    }
+
+    // 加上 _t 參數與 cache: 'no-store'，強制瀏覽器發送真實網路請求，不取硬碟無 CORS 標頭的舊快取
+    const healthUrl = `${cleanUrl}/api/health?_t=${Date.now()}`;
 
     let res;
     try {
-      res = await fetch(healthUrl, { method: "GET" });
+      res = await fetch(healthUrl, {
+        method: "GET",
+        mode: "cors",
+        cache: "no-store",
+      });
     } catch (err) {
       throw new Error("目前連不上記帳服務");
     }
