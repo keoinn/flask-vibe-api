@@ -214,6 +214,11 @@
   async function testHealthCheck(baseUrl) {
     let cleanUrl = baseUrl.replace(/\/+$/, "");
 
+    // 檢查 Mixed Content：若當前頁面為 HTTPS (如 GitHub Pages)，後端 API 網址不能為非加密的 http://
+    if (window.location.protocol === "https:" && cleanUrl.startsWith("http://")) {
+      throw new Error("目前頁面使用 HTTPS 安全連線，後端 API 伺服器網址也必須以 https:// 開頭（例如 Vercel 提供的網址），否則瀏覽器會阻擋連線");
+    }
+
     // macOS 控制中心 (ControlCenter) 的隔空播放接收器常佔用 ::1:5000 (IPv6)，若填寫 localhost 自動轉為 127.0.0.1 避開衝突
     if (cleanUrl.includes("://localhost:5000")) {
       cleanUrl = cleanUrl.replace("://localhost:5000", "://127.0.0.1:5000");

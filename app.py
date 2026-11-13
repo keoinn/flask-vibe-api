@@ -87,8 +87,18 @@ def create_app():
         web_origin = os.environ.get("WEB_ORIGIN")
         if web_origin:
             allowed = [o.strip() for o in web_origin.split(",") if o.strip()]
-            if origin in allowed:
+            if "*" in allowed:
                 return True
+            clean_origin = origin.rstrip("/")
+            for item in allowed:
+                clean_item = item.rstrip("/")
+                if clean_origin == clean_item:
+                    return True
+                # 支援如 *.github.io 或 https://*.github.io 萬用字元
+                if "*" in clean_item:
+                    pattern = "^" + re.escape(clean_item).replace(r"\*", ".*") + "$"
+                    if re.match(pattern, clean_origin):
+                        return True
         return False
 
     @app.before_request
