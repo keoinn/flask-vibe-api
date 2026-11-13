@@ -10,7 +10,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, make_response, request
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, OperationalError
 
@@ -74,6 +74,43 @@ def create_app():
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     db.init_app(app)
+
+    # -------------------------------------------------------------
+    # 跨來源資源共享 (CORS) 設定
+    # -------------------------------------------------------------
+    def is_origin_allowed(origin):
+        if not origin:
+            return False
+        # 放行 http://127.0.0.1 與 http://localhost 的任意連接埠（亦相容 https）
+        if re.match(r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$", origin):
+            return True
+        web_origin = os.environ.get("WEB_ORIGIN")
+        if web_origin:
+            allowed = [o.strip() for o in web_origin.split(",") if o.strip()]
+            if origin in allowed:
+                return True
+        return False
+
+    @app.before_request
+    def handle_cors_preflight():
+        if request.method == "OPTIONS":
+            origin = request.headers.get("Origin")
+            if is_origin_allowed(origin):
+                res = make_response("", 204)
+                res.headers["Access-Control-Allow-Origin"] = origin
+                res.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+                res.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+                res.headers["Access-Control-Max-Age"] = "86400"
+                return res
+
+    @app.after_request
+    def apply_cors_headers(response):
+        origin = request.headers.get("Origin")
+        if is_origin_allowed(origin):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        return response
 
     # -------------------------------------------------------------
     # 健康檢查端點
